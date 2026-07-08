@@ -1,0 +1,40 @@
+# Virtual environments (massive size, python installs inside the image)
+venv/
+.venv/
+env/
+
+# Version control history
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Browser Extension (runs in client browser, not on the server)
+extension/
+
+# Local database and logger states (runtime logs)
+**/logs/*.db
+**/logs/*.log
+backend/logs/
+
+# MLflow experiment runs and local configs
+**/mlruns/
+**/mlflow/
+mlruns/
+mlflow/
+
+# Compiled Python files and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local IDE configuration folders
+.vscode/
+.idea/
+
+# Documentation and migration reports
+project-analysis/
+migration/
+README.md
