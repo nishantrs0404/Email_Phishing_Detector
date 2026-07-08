@@ -5,6 +5,9 @@ const scannedUrls = new Set();
 let totalLinks = 0;
 let totalThreats = 0;
 let totalScanned = 0;
+let scanTimer = null;
+let isScanning = false;
+
 
 
 const WHITELIST = new Set([
@@ -103,8 +106,11 @@ function getTooltipText(threatLevel, probability, url) {
 }
 
 function addBadge(linkElement, threatLevel, probability, url) {
-  const existing = linkElement.parentNode.querySelector('.phishing-badge');
-  if (existing) existing.remove();
+  // Remove any existing badge near this link
+  const existing = linkElement.nextElementSibling;
+  if (existing && existing.classList && existing.classList.contains('phishing-badge')) {
+    existing.remove();
+  }
 
   const badge = document.createElement('span');
   const level = threatLevel.toLowerCase().replace('_','-');
@@ -113,7 +119,7 @@ function addBadge(linkElement, threatLevel, probability, url) {
   const pct = Math.round(probability * 100);
   if (threatLevel === 'DANGEROUS')       badge.textContent = `⚠ PHISHING ${pct}%`;
   else if (threatLevel === 'SUSPICIOUS') badge.textContent = `⚠ SUSPICIOUS ${pct}%`;
-  else if (threatLevel === 'LOW_RISK')   badge.textContent = `? LOW RISK ${pct}%`;
+  else if (threatLevel === 'LOW_RISK')   badge.textContent = `⚠ LOW RISK ${pct}%`;
   else                                   badge.textContent = `✓ SAFE`;
 
   // Tooltip
@@ -121,7 +127,20 @@ function addBadge(linkElement, threatLevel, probability, url) {
   tooltip.className = 'phishing-tooltip';
   tooltip.textContent = getTooltipText(threatLevel, probability, url);
   badge.appendChild(tooltip);
-  linkElement.parentNode.insertBefore(badge, linkElement.nextSibling);
+
+  // Robust insertion: try after the link, fallback to appending inside the link
+  try {
+    if (linkElement.parentNode) {
+      linkElement.parentNode.insertBefore(badge, linkElement.nextSibling);
+    } else {
+      linkElement.appendChild(badge);
+    }
+  } catch (e) {
+    // Final fallback: append inside the link element itself
+    linkElement.appendChild(badge);
+  }
+
+  console.log(`Phishing Detector: Badge [${threatLevel}] added for ${url.substring(0, 60)}`);
 
   // Block dangerous links
   if (threatLevel === 'DANGEROUS') {
@@ -136,7 +155,7 @@ function addBadge(linkElement, threatLevel, probability, url) {
 
 
 async function checkUrl(url, element, nlpScore = 0) {
-  // Skip whitelisted domains
+  // Skip whitelisted domains — still add SAFE badge
   if (isWhitelisted(url)) {
     addBadge(element, 'SAFE', 0.05, url);
     return;
@@ -144,129 +163,172 @@ async function checkUrl(url, element, nlpScore = 0) {
 
   const startTime = performance.now();
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`${BACKEND}/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-
+  chrome.runtime.sendMessage({ action: 'predict', url: url }, (response) => {
     const latency = Math.round(performance.now() - startTime);
 
-    // Hybrid score
-    let hybridProb = data.probability;
-    if (nlpScore >= 10) hybridProb = Math.min(1, hybridProb + 0.15);
-    else if (nlpScore >= 5) hybridProb = Math.min(1, hybridProb + 0.08);
+    if (chrome.runtime.lastError) {
+      console.log(`Phishing Detector: Extension runtime error — ${chrome.runtime.lastError.message}`);
+      fallbackPredict(element, url, nlpScore);
+      return;
+    }
 
-    let threatLevel;
-    if (hybridProb >= 0.75)      threatLevel = 'DANGEROUS';
-    else if (hybridProb >= 0.50) threatLevel = 'SUSPICIOUS';
-    else if (hybridProb >= 0.35) threatLevel = 'LOW_RISK';
-    else                         threatLevel = 'SAFE';
+    if (response && response.success) {
+      const data = response.data;
+      // Hybrid score
+      let hybridProb = data.probability;
+      if (nlpScore >= 10) hybridProb = Math.min(1, hybridProb + 0.15);
+      else if (nlpScore >= 5) hybridProb = Math.min(1, hybridProb + 0.08);
 
-    addBadge(element, threatLevel, hybridProb, url);
-    if (threatLevel !== 'SAFE') totalThreats++;
+      let threatLevel;
+      if (hybridProb >= 0.75)      threatLevel = 'DANGEROUS';
+      else if (hybridProb >= 0.50) threatLevel = 'SUSPICIOUS';
+      else if (hybridProb >= 0.35) threatLevel = 'LOW_RISK';
+      else                         threatLevel = 'SAFE';
 
-    console.log(`[${latency}ms] ${threatLevel} → ${url}`);
-    chrome.storage.local.set({ totalLinks, totalThreats, totalScanned });
+      addBadge(element, threatLevel, hybridProb, url);
+      if (threatLevel !== 'SAFE') {
+        totalThreats++;
+        chrome.storage.local.set({ totalThreats });
+      }
 
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      console.log(`Timeout scanning: ${url}`);
+      console.log(`[${latency}ms] ${threatLevel} → ${url}`);
     } else {
-      console.log(`Phishing Detector: Backend unreachable — ${err.message}`);
+      const errMsg = response ? response.error : 'Unknown background error';
+      console.log(`Phishing Detector: Backend unreachable via background — ${errMsg}`);
+      fallbackPredict(element, url, nlpScore);
     }
+  });
+}
 
-    // Graceful degradation — use NLP score only
-    if (nlpScore >= 10) {
-      addBadge(element, 'SUSPICIOUS', 0.6, url);
-    }
+function fallbackPredict(element, url, nlpScore) {
+  // Graceful degradation — use NLP score only
+  if (nlpScore >= 10) {
+    addBadge(element, 'SUSPICIOUS', 0.6, url);
+  } else {
+    // If backend is unreachable but the link is not an NLP risk, show a fallback SAFE label
+    addBadge(element, 'SAFE', 0.1, url);
   }
 }
 
 
 async function scanEmail() {
-  const emailBody = document.querySelector('.a3s.aiL');
-  if (!emailBody) return;
+  if (isScanning) return;
+  isScanning = true;
+  try {
+    const emailBodies = document.querySelectorAll('.a3s');
+    if (emailBodies.length === 0) return;
 
-  // NLP analysis on email body
-  const emailText = emailBody.innerText || '';
-  const nlpResult = analyzeEmailText(emailText);
-  const sender = getEmailSender();
-  const suspiciousSender = isSuspiciousSender(sender);
+    for (const emailBody of emailBodies) {
+      // NLP analysis on email body
+      const emailText = emailBody.innerText || '';
+      const nlpResult = analyzeEmailText(emailText);
+      const sender = getEmailSender();
+      const suspiciousSender = isSuspiciousSender(sender);
 
-  if (nlpResult.risk !== 'NONE') {
-    console.log(`Phishing Detector NLP: ${nlpResult.risk} risk. Score: ${nlpResult.score}`);
-    console.log('Triggered keywords:', nlpResult.triggered.map(t => t.word));
-  }
+      if (nlpResult.risk !== 'NONE') {
+        console.log(`Phishing Detector NLP: ${nlpResult.risk} risk. Score: ${nlpResult.score}`);
+        console.log('Triggered keywords:', nlpResult.triggered.map(t => t.word));
+      }
 
-  if (suspiciousSender) {
-    console.log(`Phishing Detector: Suspicious sender detected: ${sender}`);
-  }
+      if (suspiciousSender) {
+        console.log(`Phishing Detector: Suspicious sender detected: ${sender}`);
+      }
 
-  // Show email-level warning if NLP score is high
-  if (nlpResult.risk === 'HIGH' || suspiciousSender) {
-    const existing = document.querySelector('.phishing-email-warning');
-    if (!existing) {
-      const warning = document.createElement('div');
-      warning.className = 'phishing-email-warning';
-      warning.style.cssText = `
-        background: #fff3cd; border: 1px solid #ffc107;
-        border-radius: 6px; padding: 10px 14px; margin: 8px 0;
-        font-size: 13px; color: #856404; font-family: Arial, sans-serif;
-      `;
-      const reasons = [];
-      if (nlpResult.risk === 'HIGH') reasons.push(`phishing keywords detected (score: ${nlpResult.score})`);
-      if (suspiciousSender) reasons.push(`suspicious sender: ${sender}`);
-      warning.innerHTML = `⚠ <strong>Email Warning:</strong> This email may be phishing. Reasons: ${reasons.join(', ')}`;
-      emailBody.parentNode.insertBefore(warning, emailBody);
+      // Show email-level warning if NLP score is high
+      if (nlpResult.risk === 'HIGH' || suspiciousSender) {
+        const existing = emailBody.parentNode.querySelector('.phishing-email-warning');
+        if (!existing) {
+          const warning = document.createElement('div');
+          warning.className = 'phishing-email-warning';
+          warning.style.cssText = `
+            background: #fff3cd; border: 2px solid #ffc107;
+            border-radius: 8px; padding: 12px 16px; margin: 10px 0;
+            font-size: 13px; color: #856404; font-family: Arial, sans-serif;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          `;
+          const reasons = [];
+          if (nlpResult.risk === 'HIGH') reasons.push(`phishing keywords detected (score: ${nlpResult.score})`);
+          if (suspiciousSender) reasons.push(`suspicious sender: ${sender}`);
+          warning.innerHTML = `⚠ <strong>Email Warning:</strong> This email may be phishing. Reasons: ${reasons.join(', ')}`;
+          emailBody.parentNode.insertBefore(warning, emailBody);
+        }
+      }
+
+      // URL scanning — find ALL anchor tags in this email body
+      const anchors = emailBody.querySelectorAll('a[href]');
+      const toScan = [];
+
+      anchors.forEach(link => {
+        const url = link.href;
+        if (
+          url &&
+          url.startsWith('http') &&
+          !url.includes('mail.google.com') &&
+          !scannedUrls.has(url + '|' + link.textContent)
+        ) {
+          scannedUrls.add(url + '|' + link.textContent);
+          toScan.push({ url, element: link });
+        }
+      });
+
+      if (toScan.length === 0) continue;
+      console.log(`Phishing Detector: Found ${toScan.length} new links to scan...`);
+
+      totalLinks += toScan.length;
+      totalScanned++;
+      chrome.storage.local.set({ totalLinks, totalThreats, totalScanned });
+
+      for (const { url, element } of toScan) {
+        await checkUrl(url, element, nlpResult.score);
+        await new Promise(r => setTimeout(r, 100));
+      }
     }
-  }
-
-  // URL scanning
-  const anchors = emailBody.querySelectorAll('a');
-  const toScan = [];
-
-  anchors.forEach(link => {
-    const url = link.href;
-    if (
-      url &&
-      url.startsWith('http') &&
-      !url.includes('mail.google.com') &&
-      !scannedUrls.has(url)
-    ) {
-      scannedUrls.add(url);
-      toScan.push({ url, element: link });
-    }
-  });
-
-  if (toScan.length === 0) return;
-  console.log(`Phishing Detector: Scanning ${toScan.length} links...`);
-
-  totalLinks += toScan.length;
-  totalScanned++;
-  chrome.storage.local.set({ totalLinks, totalThreats, totalScanned });
-
-  for (const { url, element } of toScan) {
-    await checkUrl(url, element, nlpResult.score);
-    await new Promise(r => setTimeout(r, 150));
+  } finally {
+    isScanning = false;
   }
 }
 
-// MutationObserver
-const observer = new MutationObserver(() => {
-  if (document.querySelector('.a3s.aiL')) {
-    setTimeout(scanEmail, 1000);
+// ============================================================
+// Gmail SPA Navigation Detection
+// ============================================================
+// Gmail is a Single Page Application. When you click an email,
+// it does NOT reload the page — it changes the URL hash
+// (e.g., #inbox → #inbox/FMfcgz...) and swaps the DOM content.
+// We detect this hash change and reset our scanning state.
+// ============================================================
+
+let lastHash = location.hash;
+
+function resetScanState() {
+  // Clear all previous scan markers
+  scannedUrls.clear();
+  // Remove old badges and warnings so they don't persist across emails
+  document.querySelectorAll('.phishing-badge, .phishing-email-warning').forEach(el => el.remove());
+  console.log('Phishing Detector: Navigation detected — scan state reset.');
+}
+
+// Detect Gmail SPA navigation via hash changes
+setInterval(() => {
+  if (location.hash !== lastHash) {
+    lastHash = location.hash;
+    resetScanState();
+    // Wait for Gmail to finish rendering the new email content
+    setTimeout(scanEmail, 2000);
   }
+}, 500);
+
+// Debounced MutationObserver — catches initial load + Gmail DOM updates
+const observer = new MutationObserver(() => {
+  if (isScanning) return;
+  if (scanTimer) clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => {
+    const bodies = document.querySelectorAll('.a3s');
+    if (bodies.length > 0) {
+      scanEmail();
+    }
+  }, 1500);
 });
 observer.observe(document.body, { childList: true, subtree: true });
+
+// Initial scan on page load
 setTimeout(scanEmail, 3000);
