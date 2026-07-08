@@ -1,6 +1,6 @@
 console.log('Phishing Detector: Active on Gmail.');
 
-const BACKEND = 'http://127.0.0.1:5000';
+const BACKEND = 'https://email-phishing-detector-cmpz.onrender.com';
 const scannedUrls = new Set();
 let totalLinks = 0;
 let totalThreats = 0;

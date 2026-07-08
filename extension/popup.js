@@ -5,7 +5,7 @@ chrome.storage.local.get(['totalScanned','totalThreats','totalLinks'], (data) =>
 });
 
 // Check if backend is running
-fetch('http://127.0.0.1:5000/health')
+fetch('https://email-phishing-detector-cmpz.onrender.com/health')
   .then(r => r.json())
   .then(() => {
     document.getElementById('backendDot').className = 'status-dot dot-green';
@@ -13,5 +13,5 @@ fetch('http://127.0.0.1:5000/health')
   })
   .catch(() => {
     document.getElementById('backendDot').className = 'status-dot dot-red';
-    document.getElementById('backendStatus').textContent = 'Backend offline — start Flask';
+    document.getElementById('backendStatus').textContent = 'Backend offline — start API';
   });
