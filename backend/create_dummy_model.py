@@ -15,14 +15,14 @@ model = RandomForestClassifier(n_estimators=10, random_state=42)
 model.fit(X, y)
 
 # Save dummy model files
-joblib.dump(model, 'model/phishing_model.pkl')
+joblib.dump(model, 'model/phishing_model.joblib')
 features = [
     'length', 'dot_count', 'hyphen_count', 'slash_count', 'digit_count', 
     'special_char_count', 'has_https', 'has_ip', 'has_at', 'has_double_slash', 
     'has_port', 'entropy', 'has_punycode', 'suspicious_tld', 'subdomain_count', 
     'brand_in_subdomain', 'suspicious_words'
 ]
-joblib.dump(features, 'model/feature_names.pkl')
+joblib.dump(features, 'model/feature_names.joblib')
 
-print("Success! Dummy model saved at model/phishing_model.pkl")
+print("Success! Dummy model saved at model/phishing_model.joblib")
 print("You can now run 'python app.py' to start the server.")

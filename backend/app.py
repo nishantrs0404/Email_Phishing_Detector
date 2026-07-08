@@ -62,8 +62,8 @@ def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse({'error': str(exc)}, status_code=500)
 
 # Load model
-model = joblib.load('model/phishing_model.pkl')
-feature_names = joblib.load('model/feature_names.pkl')
+model = joblib.load('model/phishing_model.joblib')
+feature_names = joblib.load('model/feature_names.joblib')
 THRESHOLD = 0.35
 print("Model loaded.")
 

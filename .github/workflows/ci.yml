@@ -62,9 +62,9 @@ jobs:
           y = np.random.randint(0, 2, 100)
           model = RandomForestClassifier(n_estimators=10, random_state=42)
           model.fit(X, y)
-          joblib.dump(model, 'backend/model/phishing_model.pkl')
+          joblib.dump(model, 'backend/model/phishing_model.joblib')
           features = ['length','dot_count','hyphen_count','slash_count','digit_count','special_char_count','has_https','has_ip','has_at','has_double_slash','has_port','entropy','has_punycode','suspicious_tld','subdomain_count','brand_in_subdomain','suspicious_words']
-          joblib.dump(features, 'backend/model/feature_names.pkl')
+          joblib.dump(features, 'backend/model/feature_names.joblib')
           print('Dummy model created')
           "
       - name: Start FastAPI server
@@ -103,9 +103,9 @@ jobs:
           y = np.random.randint(0, 2, 100)
           model = RandomForestClassifier(n_estimators=10, random_state=42)
           model.fit(X, y)
-          joblib.dump(model, 'backend/model/phishing_model.pkl')
+          joblib.dump(model, 'backend/model/phishing_model.joblib')
           features = ['length','dot_count','hyphen_count','slash_count','digit_count','special_char_count','has_https','has_ip','has_at','has_double_slash','has_port','entropy','has_punycode','suspicious_tld','subdomain_count','brand_in_subdomain','suspicious_words']
-          joblib.dump(features, 'backend/model/feature_names.pkl')
+          joblib.dump(features, 'backend/model/feature_names.joblib')
           print('Dummy model created')
           "
       - name: Build Docker image
