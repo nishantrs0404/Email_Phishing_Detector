@@ -12,7 +12,7 @@
 
   "host_permissions": [
     "https://mail.google.com/*",
-    "https://email-phishing-detector-cmpz.onrender.com/*"
+    "http://127.0.0.1:5000/*"
   ],
 
   "content_scripts": [

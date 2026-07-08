@@ -5,7 +5,7 @@ chrome.storage.local.get(['totalScanned','totalThreats','totalLinks'], (data) =>
 });
 
 // Check if backend is running
-fetch('https://email-phishing-detector-cmpz.onrender.com/health')
+fetch('http://127.0.0.1:5000/health')
   .then(r => r.json())
   .then(() => {
     document.getElementById('backendDot').className = 'status-dot dot-green';

@@ -7,7 +7,7 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-const BACKEND = 'https://email-phishing-detector-cmpz.onrender.com';
+const BACKEND = 'http://127.0.0.1:5000';
 
 // Proxy /predict requests to bypass Mixed Content blocks in Gmail (HTTPS to HTTP)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
